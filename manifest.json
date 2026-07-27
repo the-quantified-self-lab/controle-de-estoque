@@ -1,5 +1,5 @@
 {
-  "name": "Estoque · Dieta",
+  "name": "Controle de Estoque",
   "short_name": "Estoque",
   "description": "Controle de estoque dos itens da dieta, com quantidade restante e dias restantes.",
   "start_url": "./",

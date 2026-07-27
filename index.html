@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Estoque">
-<title>Estoque · Dieta</title>
+<title>Controle de Estoque</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="icon" href="./icon-192.png">
@@ -70,6 +70,18 @@ h1 span{color:var(--tx3);font-weight:600}
 .days .l{font-size:9.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-top:3px;font-weight:700}
 .bar{height:3px;background:var(--line)}
 .bar div{height:100%;transition:width .25s}
+
+/* selo de fechamento do dia por item */
+.seal{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  padding:3px 7px;border-radius:100px;white-space:nowrap;display:inline-block}
+.seal.done{background:rgba(64,196,99,.16);color:var(--ok)}
+.seal.todo{background:rgba(232,179,57,.16);color:var(--warn)}
+.item.pend{box-shadow:inset 3px 0 0 var(--warn)}
+.sealrow{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+.sealrow .lbl{font-size:11.5px;color:var(--tx3);flex:1;min-width:120px}
+.sbtn{background:var(--card2);border:1px solid var(--line);color:var(--tx);
+  border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--sans)}
+.sbtn.on{border-color:rgba(64,196,99,.45);color:var(--ok)}
 
 .acts{display:none;padding:0 14px 14px;border-top:1px solid var(--line);padding-top:12px}
 .item.open .acts{display:block}
@@ -223,6 +235,24 @@ function save(cloud){
   if(cloud!==false) schedulePush();
 }
 
+/* ============================================================
+   FECHAMENTO DO DIA POR ITEM
+   Cada item guarda "ate" = data (AAAA-MM-DD) até a qual o consumo já
+   está refletido no estoque. Serve para responder "este número já
+   considera o consumo de hoje?" mesmo quando o item não foi consumido,
+   e para impedir que o mesmo dia seja descontado duas vezes.
+   ============================================================ */
+function hojeISO(){
+  const d=new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function fechado(i){ return i.ate===hojeISO(); }
+function contarFechados(){
+  let n=0;
+  for(let k=0;k<S.items.length;k++){ if(fechado(S.items[k])) n++; }
+  return n;
+}
+
 function fmt(v,u){
   if(u==="un") return (Math.round(v*10)/10).toString().replace(".",",")+" un";
   if(v>=1000) return (Math.round(v/100)/10).toString().replace(".",",")+" "+(u==="ml"?"L":"kg");
@@ -241,27 +271,40 @@ function render(){
   document.getElementById("sub").textContent=
     new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"short"});
 
+  const fech=contarFechados(), tot=S.items.length;
   document.getElementById("alerts").innerHTML=
     (crit?'<span class="pill c">'+crit+' acabando</span>':"")+
     (warn?'<span class="pill w">'+warn+' repor em breve</span>':"")+
-    (ok?'<span class="pill o">'+ok+' ok</span>':"");
+    (ok?'<span class="pill o">'+ok+' ok</span>':"")+
+    '<span class="pill '+(fech===tot?"o":"w")+'">'+
+      (fech===tot?"dia fechado":fech+"/"+tot+" fechados hoje")+'</span>';
 
   document.getElementById("list").innerHTML=items.map(function(i){
     const n=daysLeft(i), col=colorFor(n);
     const pct=Math.max(0,Math.min(100,(n/15)*100));
     const dtxt=!isFinite(n)?"&infin;":(n>=10?Math.floor(n):(Math.round(n*10)/10).toString().replace(".",","));
     const step=i.u==="un"?1:(i.d>=100?100:10);
-    return '<div class="item" data-id="'+i.id+'">'+
+    const fe=fechado(i);
+    return '<div class="item'+(fe?"":" pend")+'" data-id="'+i.id+'">'+
       '<div class="ihead" onclick="tog(\''+i.id+'\')">'+
         '<span class="dot" style="background:'+CAT[i.c]+'"></span>'+
         '<div class="iname">'+
           '<div class="n">'+i.n+'</div>'+
-          '<div class="q">'+fmt(i.e,i.u)+" &middot; "+fmt(i.d,i.u)+'/dia</div>'+
+          '<div class="q">'+fmt(i.e,i.u)+" &middot; "+fmt(i.d,i.u)+'/dia '+
+            '<span class="seal '+(fe?"done":"todo")+'">'+(fe?"&check; hoje":"pendente")+'</span>'+
+          '</div>'+
         '</div>'+
         '<div class="days"><div class="v" style="color:'+col+'">'+dtxt+'</div><div class="l">dias</div></div>'+
       '</div>'+
       '<div class="bar"><div style="width:'+pct+'%;background:'+col+'"></div></div>'+
       '<div class="acts">'+
+        '<div class="sealrow">'+
+          '<span class="lbl">'+(fe
+            ? "Atualizado at&eacute; o fim de hoje."
+            : "Ainda n&atilde;o contabilizado hoje.")+'</span>'+
+          '<button class="sbtn'+(fe?" on":"")+'" onclick="marcarDia(\''+i.id+'\','+(fe?"false":"true")+')">'+
+            (fe?"Reabrir":"Sem consumo hoje")+'</button>'+
+        '</div>'+
         '<div class="qrow">'+
           '<button class="qbtn use" onclick="mv(\''+i.id+'\',-'+i.d+')">&minus; 1 dia</button>'+
           '<button class="qbtn use" onclick="mv(\''+i.id+'\',-'+step+')">&minus; '+fmt(step,i.u)+'</button>'+
@@ -285,10 +328,28 @@ function tog(id){
 }
 function mv(id,delta){
   const it=S.items.find(function(i){return i.id===id;}); if(!it) return;
+  const jaFechado=fechado(it);
+  // Baixa manual em item já fechado hoje = provável lançamento duplicado.
+  if(delta<0 && jaFechado){
+    if(!confirm(it.n+" já está contabilizado até hoje.\n\nLançar esta baixa mesmo assim? "+
+                "Se você já registrou este consumo hoje, isso vai descontar em duplicidade.")) return;
+  }
   it.e=Math.max(0,Math.round((it.e+delta)*100)/100);
+  // Consumir fecha o item no dia; comprar não altera esse estado.
+  if(delta<0) it.ate=hojeISO();
   S.last=null; save(); render();
   const el=document.querySelector('.item[data-id="'+id+'"]'); if(el) el.classList.add("open");
   toast(it.n+": "+fmt(it.e,it.u));
+}
+
+/* Marca/desmarca o item como contabilizado hoje SEM mexer na quantidade.
+   É o caso "não consumi este item hoje, e está tudo certo". */
+function marcarDia(id,fechar){
+  const it=S.items.find(function(i){return i.id===id;}); if(!it) return;
+  it.ate = fechar ? hojeISO() : null;
+  S.last=null; save(); render();
+  const el=document.querySelector('.item[data-id="'+id+'"]'); if(el) el.classList.add("open");
+  toast(it.n+(fechar?": fechado hoje":": reaberto"));
 }
 function man(id,sign){
   const inp=document.getElementById("in-"+id);
@@ -297,14 +358,31 @@ function man(id,sign){
   inp.value=""; inp.blur(); mv(id,sign*v);
 }
 document.getElementById("dayBtn").onclick=function(){
-  S.items.forEach(function(i){ if(i.auto!==false) i.e=Math.max(0,Math.round((i.e-i.d)*100)/100); });
-  S.last=Date.now(); save(); render();
+  const alvo=S.items.filter(function(i){ return i.auto!==false && !fechado(i); });
+  const pulados=S.items.filter(function(i){ return i.auto!==false && fechado(i); }).length;
+  if(!alvo.length){
+    toast(pulados?"Todos os itens já estão fechados hoje":"Nenhum item automático");
+    return;
+  }
+  // guarda o que foi alterado para que Desfazer reverta só isso
+  const anterior=alvo.map(function(i){ return {id:i.id, ate:i.ate||null}; });
+  alvo.forEach(function(i){
+    i.e=Math.max(0,Math.round((i.e-i.d)*100)/100);
+    i.ate=hojeISO();
+  });
+  S.last={ts:Date.now(), itens:anterior};
+  save(); render();
   document.getElementById("undoBtn").disabled=false;
-  toast("Dia registrado");
+  toast("Dia registrado em "+alvo.length+" itens"+(pulados?" · "+pulados+" já estavam fechados":""));
 };
 document.getElementById("undoBtn").onclick=function(){
-  if(!S.last) return;
-  S.items.forEach(function(i){ if(i.auto!==false) i.e=Math.round((i.e+i.d)*100)/100; });
+  if(!S.last || !S.last.itens) return;
+  S.last.itens.forEach(function(reg){
+    const it=S.items.find(function(i){ return i.id===reg.id; });
+    if(!it) return;
+    it.e=Math.round((it.e+it.d)*100)/100;
+    it.ate=reg.ate;                       // devolve o estado anterior de fechamento
+  });
   S.last=null; save(); render();
   document.getElementById("undoBtn").disabled=true;
   toast("Desfeito");
@@ -423,11 +501,11 @@ function stateToRows(){
   const rows=[
     ["alerta_dias", S.alertDays, "atualizado_em", new Date().toISOString()],
     [],
-    ["id","item","unidade","consumo_dia","estoque"]
+    ["id","item","unidade","consumo_dia","estoque","contabilizado_ate"]
   ];
   for(let k=0;k<S.items.length;k++){
     const i=S.items[k];
-    rows.push([i.id, i.n, i.u, i.d, i.e]);
+    rows.push([i.id, i.n, i.u, i.d, i.e, i.ate||""]);
   }
   return rows;
 }
@@ -443,19 +521,21 @@ function rowsToState(values){
     const it=items.find(function(x){ return x.id===String(r[0]).trim(); }); if(!it) continue;
     const d=Number(String(r[3]).replace(",",".")); if(!isNaN(d)&&d>=0) it.d=d;
     const e=Number(String(r[4]).replace(",",".")); if(!isNaN(e)&&e>=0) it.e=e;
+    const a=String(r[5]||"").trim();
+    if(/^\d{4}-\d{2}-\d{2}$/.test(a)) it.ate=a;   // coluna nova; planilhas antigas não têm
   }
   return {items:items, alertDays:alertDays, last:null};
 }
 async function cloudPull(){
   await ensureTab();
-  const r=await api(SHEET_ID+"/values/"+encodeURIComponent(SHEET_TAB+"!A1:E200"));
+  const r=await api(SHEET_ID+"/values/"+encodeURIComponent(SHEET_TAB+"!A1:F200"));
   if(!r.ok) throw new Error("HTTP "+r.status);
   const data=await r.json();
   return rowsToState(data.values);
 }
 async function cloudPush(){
   await ensureTab();
-  await api(SHEET_ID+"/values/"+encodeURIComponent(SHEET_TAB+"!A1:E200")+":clear",{method:"POST",body:"{}"});
+  await api(SHEET_ID+"/values/"+encodeURIComponent(SHEET_TAB+"!A1:F200")+":clear",{method:"POST",body:"{}"});
   const r=await api(SHEET_ID+"/values/"+encodeURIComponent(SHEET_TAB+"!A1")+"?valueInputOption=RAW",
     {method:"PUT",body:JSON.stringify({values:stateToRows()})});
   if(!r.ok) throw new Error("HTTP "+r.status);

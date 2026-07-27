@@ -1,4 +1,4 @@
-const CACHE = 'estoque-v2';
+const CACHE = 'estoque-v3';
 const ASSETS = ['./', './index.html', './manifest.json',
                 './icon-192.png', './icon-512.png', './icon-maskable.png'];
 
